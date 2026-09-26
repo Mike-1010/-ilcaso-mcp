@@ -53,6 +53,8 @@ _lock = asyncio.Lock()
 _last_request = 0.0
 _cache: dict[str, tuple[float, str]] = {}
 _robots: robotparser.RobotFileParser | None = None
+_login_lock = asyncio.Lock()
+_logged_in = False
 
 
 async def _allowed(url: str) -> bool:
@@ -69,9 +71,45 @@ async def _allowed(url: str) -> bool:
     return _robots.can_fetch(config.USER_AGENT, url)
 
 
-async def fetch(url: str, params: dict | None = None) -> str:
-    """GET generico per le pagine di ilcaso.it (non per la ricerca)."""
+async def _do_login() -> bool:
+    """Invia il token Premium al modulo di login del sito. Il client HTTP
+    condiviso conserva i cookie tra le richieste, quindi dopo un login
+    riuscito tutte le fetch successive lo erediteranno automaticamente."""
     global _last_request
+    async with _lock:
+        wait = config.MIN_INTERVAL - (time.monotonic() - _last_request)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        try:
+            r = await _client.post(
+                config.LOGIN_URL, data={config.LOGIN_FIELD: config.PREMIUM_TOKEN}
+            )
+        finally:
+            _last_request = time.monotonic()
+    ok = r.status_code in (200, 303) and "premium" in _client.cookies
+    return ok
+
+
+async def ensure_login() -> None:
+    """Fa login una sola volta per sessione del server, se è configurato un
+    token Premium. Non solleva eccezioni: se il login fallisce, si prosegue
+    da anonimi e leggi_documento segnalerà i contenuti riservati come tali."""
+    global _logged_in
+    if not config.PREMIUM_TOKEN or _logged_in:
+        return
+    async with _login_lock:
+        if _logged_in:  # un'altra richiesta potrebbe aver già fatto login
+            return
+        try:
+            _logged_in = await _do_login()
+        except httpx.HTTPError:
+            _logged_in = False
+
+
+async def fetch(url: str, params: dict | None = None, _retried: bool = False) -> str:
+    """GET generico per le pagine di ilcaso.it (non per la ricerca)."""
+    global _last_request, _logged_in
+    await ensure_login()
     key = url + "?" + json.dumps(params or {}, sort_keys=True)
     hit = _cache.get(key)
     if hit and time.monotonic() - hit[0] < config.CACHE_TTL:
@@ -87,8 +125,16 @@ async def fetch(url: str, params: dict | None = None) -> str:
         finally:
             _last_request = time.monotonic()
     r.raise_for_status()
-    _cache[key] = (time.monotonic(), r.text)
-    return r.text
+    text = r.text
+    # Se il token è configurato ma la pagina mostra comunque il muro Premium,
+    # la sessione potrebbe essere scaduta (o "troppi dispositivi"): un solo
+    # nuovo tentativo di login, poi si accetta il risultato così com'è.
+    if config.PREMIUM_TOKEN and not _retried and config.PREMIUM_WALL_MARKER in text:
+        _logged_in = False
+        await ensure_login()
+        return await fetch(url, params, _retried=True)
+    _cache[key] = (time.monotonic(), text)
+    return text
 
 
 def _unwrap_ddg(url: str) -> str:
@@ -289,8 +335,16 @@ async def leggi_documento(url: str, max_caratteri: int = 8000) -> dict:
         "testo": text[:max_caratteri],
         "troncato": len(text) > max_caratteri,
     }
-    if len(text) < 400 and re.search(r"premium|login|accedi|abbonat", text, re.I):
-        res["nota"] = "Contenuto probabilmente riservato agli abbonati Premium."
+    if config.PREMIUM_WALL_MARKER in text or (
+        len(text) < 400 and re.search(r"premium|login|accedi|abbonat", text, re.I)
+    ):
+        res["nota"] = (
+            "Contenuto riservato agli abbonati Premium: non è stato sbloccato "
+            "(token Premium mancante, scaduto, o sessione respinta per troppi "
+            "dispositivi attivi)."
+            if config.PREMIUM_TOKEN
+            else "Contenuto riservato agli abbonati Premium."
+        )
     return res
 
 

@@ -12,6 +12,19 @@ MIN_INTERVAL = 1.5   # secondi minimi tra due richieste al sito
 CACHE_TTL = 900      # secondi di cache in memoria
 TIMEOUT = 20
 
+# --- Accesso Premium (opzionale) --------------------------------------------
+# Se imposti la variabile d'ambiente ILCASO_PREMIUM_TOKEN con il tuo token di
+# 12 caratteri (quello ricevuto via email dopo l'abbonamento), il server fa
+# login automaticamente e vede anche i contenuti riservati (Anteprime, Linee
+# Guida, Massimari Ragionati). Senza questa variabile, il connettore funziona
+# comunque, ma solo sui contenuti pubblici. NON scrivere il token qui nel
+# codice: impostalo solo come variabile d'ambiente (locale o su Render).
+PREMIUM_TOKEN = os.getenv("ILCASO_PREMIUM_TOKEN", "")
+LOGIN_URL = f"{BASE}/home/login"
+LOGIN_FIELD = "token_login"
+PREMIUM_WALL_MARKER = "contenuto riservato ad utenti Premium"
+# ---------------------------------------------------------------------------
+
 # --- Ricerca: DuckDuckGo HTML (nessuna chiave richiesta) --------------------
 # La Google Custom Search JSON API è chiusa ai nuovi clienti (Google, 2026),
 # quindi interroghiamo DuckDuckGo con "site:ilcaso.it <query>" e riusiamo lo
