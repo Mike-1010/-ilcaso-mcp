@@ -3,9 +3,9 @@ import os
 
 BASE = "https://www.ilcaso.it"
 
-# Identificati in modo onesto: metti un contatto reale.
+# Identificati in modo onesto: imposta ILCASO_UA su Render con un contatto reale.
 USER_AGENT = os.getenv(
-    "ILCASO_UA", "ilcaso-mcp/0.1 (uso professionale personale; contatto: TUA_EMAIL)"
+    "ILCASO_UA", "ilcaso-mcp/0.2 (uso professionale personale; contatto: TUA_EMAIL)"
 )
 
 MIN_INTERVAL = 1.5   # secondi minimi tra due richieste al sito
@@ -13,37 +13,42 @@ CACHE_TTL = 900      # secondi di cache in memoria
 TIMEOUT = 20
 
 # --- Accesso Premium (opzionale) --------------------------------------------
-# Se imposti la variabile d'ambiente ILCASO_PREMIUM_TOKEN con il tuo token di
-# 12 caratteri (quello ricevuto via email dopo l'abbonamento), il server fa
-# login automaticamente e vede anche i contenuti riservati (Anteprime, Linee
-# Guida, Massimari Ragionati). Senza questa variabile, il connettore funziona
-# comunque, ma solo sui contenuti pubblici. NON scrivere il token qui nel
-# codice: impostalo solo come variabile d'ambiente (locale o su Render).
+# Variabile d'ambiente ILCASO_PREMIUM_TOKEN (mai nel codice).
 PREMIUM_TOKEN = os.getenv("ILCASO_PREMIUM_TOKEN", "")
 LOGIN_URL = f"{BASE}/home/login"
 LOGIN_FIELD = "token_login"
 PREMIUM_WALL_MARKER = "contenuto riservato ad utenti Premium"
 # ---------------------------------------------------------------------------
 
-# --- Ricerca: DuckDuckGo HTML (nessuna chiave richiesta) --------------------
-# La Google Custom Search JSON API è chiusa ai nuovi clienti (Google, 2026),
-# quindi interroghiamo DuckDuckGo con "site:ilcaso.it <query>" e riusiamo lo
-# stesso parser HTML già scritto per il resto del sito. Nessun account,
-# nessuna chiave, nessuna fatturazione richiesta.
+# --- Ricerca ----------------------------------------------------------------
+# v0.2 (09/10/2026): la ricerca via DuckDuckGo andava in timeout da Render
+# (errore vuoto "Ricerca non riuscita: "). Ora la ricerca scorre gli ELENCHI
+# UFFICIALI del sito (paginati, stesso dominio, robots.txt rispettato) e
+# filtra i titoli in locale. Limite: copre le pubblicazioni recenti, non
+# l'intero archivio (vedi nota restituita da ogni ricerca).
+SEARCH_PAGES = int(os.getenv("ILCASO_SEARCH_PAGES", "5"))   # pagine di elenco per ricerca
+SEARCH_PAGES_MAX = 10
+# Elenco di default per le sentenze (il sito lo chiama "Tutte": include merito e legittimità).
+SENTENZE_DEFAULT_SECTION = "Tutte"
+# Fallback opzionale DuckDuckGo (disattivato: da Render non risponde).
+USE_DDG_FALLBACK = os.getenv("ILCASO_USE_DDG", "0") == "1"
 DDG_HTML_ENDPOINT = "https://html.duckduckgo.com/html/"
 DDG_SITE_FILTER = "site:ilcaso.it"
+DDG_TIMEOUT = 8
 # ---------------------------------------------------------------------------
 
-# Elenchi "ultime pubblicate" (pattern visti in homepage).
+# Elenchi "ultime pubblicate" (verificati il 09/10/2026 dai link "segue ..." della home).
 LISTING_URLS = {
     "merito": f"{BASE}/sezioni/merito/ultime_pubblicate",
-    "legittimita": f"{BASE}/sezioni/Tutte/ultime_pubblicate",
+    "legittimita": f"{BASE}/sezioni/Tutte/ultime_pubblicate",  # il sito non ha un elenco solo-legittimità
+    "tutte": f"{BASE}/sezioni/Tutte/ultime_pubblicate",
     "articoli": f"{BASE}/articoli",
     "anteprime": f"{BASE}/linee_guida",
 }
-# Sezioni per materia: /sezioni/<Nome> (es. Bancario, Condominio, Lavoro...)
+# Paginazione verificata: /sezioni/<Nome>/ultime_pubblicate/<N> e /articoli/tutti/<N>
 SECTION_URL = BASE + "/sezioni/{name}"
+SECTION_PAGE_URL = BASE + "/sezioni/{name}/ultime_pubblicate/{page}"
+ARTICLES_PAGE_URL = BASE + "/articoli/tutti/{page}"
 CITY_URL = BASE + "/citta_{name}"
 
-# Contenitori candidati per il testo di un documento (si sceglie il più lungo).
 CONTENT_SELECTORS = "article, main, #content, .content, .testo, .container"
