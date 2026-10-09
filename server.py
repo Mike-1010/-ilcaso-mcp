@@ -429,8 +429,11 @@ async def leggi_documento(url: str, max_caratteri: int = 8000) -> dict:
     text = _clean(best.get_text(" "))
     # Il primo h1/h2 è spesso solo la rubrica ("Crisi d'Impresa e Insolvenza"):
     # il titolo vero segue la riga "Il Caso.it, Sez. Giurisprudenza, N - pubb. gg/mm/aaaa".
-    m = re.search(r"pubb\.\s*\d{2}/\d{2}/\d{4}\s+(.{15,300}?)(?:\s{2,}|$)", text)
-    title = _clean(m.group(1)) if m else _clean((soup.find("h1") or soup.find("h2") or soup.title or soup).get_text(" "))[:300]
+    m = re.search(r"pubb\.\s*\d{2}/\d{2}/\d{4}\s+(.{15,})", text)
+    if m:
+        title = m.group(1)[:200].rsplit(" ", 1)[0] + "…"
+    else:
+        title = _clean((soup.find("h1") or soup.find("h2") or soup.title or soup).get_text(" "))[:300]
     res = {
         "fonte": "IL CASO.it",
         "url": url,
